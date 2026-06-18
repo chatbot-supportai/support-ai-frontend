@@ -304,7 +304,7 @@ export default function Sidebar() {
             <div className="flex items-center justify-between text-xs text-slate-400 font-semibold">
               <span>Guest Mode</span>
               <span className="text-emerald-500">
-                {process.env.NODE_ENV === "development" 
+                {process.env.NEXT_PUBLIC_ENV === "development" || process.env.NODE_ENV === "development" 
                   ? `${guestPromptsUsed} prompts (Unlimited Dev)` 
                   : `${guestPromptsUsed}/5 prompts`}
               </span>
@@ -314,7 +314,7 @@ export default function Sidebar() {
               <div 
                 className="bg-emerald-500 h-1.5 rounded-full transition-all duration-300"
                 style={{ 
-                  width: `${process.env.NODE_ENV === "development" ? 0 : Math.min(100, (guestPromptsUsed / 5) * 100)}%` 
+                  width: `${process.env.NEXT_PUBLIC_ENV === "development" || process.env.NODE_ENV === "development" ? 0 : Math.min(100, (guestPromptsUsed / 5) * 100)}%` 
                 }}
               />
             </div>

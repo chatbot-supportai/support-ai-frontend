@@ -91,7 +91,7 @@ export default function ChatPage() {
     if (!textToSend.trim() || isGenerating) return;
 
     // Strict local guest check BEFORE sending to avoid wasting prompt calls
-    const isDev = process.env.NODE_ENV === "development";
+    const isDev = process.env.NEXT_PUBLIC_ENV === "development" || process.env.NODE_ENV === "development";
     if (!user && !isDev && guestPromptsUsed >= 5) {
       setShowSignupModal(true);
       return;
@@ -344,7 +344,7 @@ export default function ChatPage() {
           <div className="flex items-center gap-2">
             {!user && (
               <span className="text-xs font-semibold px-2.5 py-1 rounded-full border border-emerald-500/20 bg-emerald-950/20 text-emerald-400">
-                {process.env.NODE_ENV === "development" 
+                {process.env.NEXT_PUBLIC_ENV === "development" || process.env.NODE_ENV === "development" 
                   ? `Guest Prompts: ${guestPromptsUsed} (Unlimited Dev)` 
                   : `Guest Limit: ${guestPromptsUsed}/5`}
               </span>
