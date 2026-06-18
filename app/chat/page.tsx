@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { 
   Plus,
@@ -19,6 +19,7 @@ import {
   ChevronDown,
   Paperclip,
   Mic,
+  MicOff,
   ArrowUp,
   ThumbsUp,
   ThumbsDown
@@ -61,6 +62,16 @@ export default function ChatPage() {
   const [streamContent, setStreamContent] = useState("");
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 
+  // ── Voice recording state ──────────────────────────────────────────────────
+  const [isRecording, setIsRecording] = useState(false);
+  const [interimTranscript, setInterimTranscript] = useState("");
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  // Holds the text that was already in the textarea before recording started,
+  // so we can correctly append interim results without duplicating it.
+  const inputBeforeRecordRef = useRef("");
+  // ──────────────────────────────────────────────────────────────────────────
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -68,6 +79,113 @@ export default function ChatPage() {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+
+  // ── Voice recording helpers ────────────────────────────────────────────────
+  const stopVoiceRecording = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setIsRecording(false);
+    setInterimTranscript("");
+    setVoiceError(null);
+    // Focus textarea so the user can edit / send immediately
+    setTimeout(() => textareaRef.current?.focus(), 50);
+  }, []);
+
+  const startVoiceRecording = useCallback(() => {
+    // Clear any previous error
+    setVoiceError(null);
+
+    const SpeechRecognitionCtor: { new(): SpeechRecognition } | undefined =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionCtor) {
+      setVoiceError("Voice input is not supported in this browser. Try Chrome or Edge.");
+      return;
+    }
+
+    const recognition: SpeechRecognition = new SpeechRecognitionCtor();
+    recognition.lang = "en-US";
+    recognition.interimResults = true;   // show live preview
+    recognition.continuous = true;       // keep listening until stopped
+    recognition.maxAlternatives = 1;
+
+    // Snapshot current input so we can append without duplicating
+    inputBeforeRecordRef.current = input;
+
+    recognition.onstart = () => {
+      setIsRecording(true);
+    };
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let finalChunk = "";
+      let interimChunk = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          finalChunk += result[0].transcript;
+        } else {
+          interimChunk += result[0].transcript;
+        }
+      }
+
+      if (finalChunk) {
+        // Commit the final chunk into the main input
+        setInput((prev) => {
+          const base = inputBeforeRecordRef.current;
+          const newText = base
+            ? base + " " + finalChunk.trim()
+            : finalChunk.trim();
+          inputBeforeRecordRef.current = newText;
+          return newText;
+        });
+        setInterimTranscript("");
+      } else {
+        setInterimTranscript(interimChunk);
+      }
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      if (event.error === "no-speech") return; // ignore silence
+      if (event.error === "aborted") return;    // manual stop, not an error
+      setVoiceError(`Mic error: ${event.error}`);
+      stopVoiceRecording();
+    };
+
+    recognition.onend = () => {
+      // Only stop state if we haven't already done so (e.g. on error)
+      setIsRecording(false);
+      setInterimTranscript("");
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  }, [input, stopVoiceRecording]);
+
+  const handleMicClick = useCallback(() => {
+    if (isRecording) {
+      stopVoiceRecording();
+    } else {
+      startVoiceRecording();
+    }
+  }, [isRecording, startVoiceRecording, stopVoiceRecording]);
+
+  // Stop recording if the user starts generating
+  useEffect(() => {
+    if (isGenerating && isRecording) stopVoiceRecording();
+  }, [isGenerating, isRecording, stopVoiceRecording]);
+
+  // Clean up recognition on unmount
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+    };
+  }, []);
+  // ──────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     scrollToBottom();
@@ -506,25 +624,73 @@ export default function ChatPage() {
                 <Paperclip className="w-4.5 h-4.5" />
               </button>
 
-              {/* Textarea */}
-              <textarea
-                ref={textareaRef}
-                className="grow pl-2 pr-12 py-2 bg-transparent border-0 text-[#ececec] placeholder:text-slate-500 focus:outline-none focus:ring-0 text-sm resize-none h-10 scrollbar-none"
-                placeholder={isGenerating ? "Generation in progress..." : "Message SupportAI..."}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                rows={1}
-              />
+              {/* Textarea — shows interim voice transcript as faded overlay text */}
+              <div className="relative grow flex items-end">
+                <textarea
+                  ref={textareaRef}
+                  className="grow w-full pl-2 pr-2 py-2 bg-transparent border-0 text-[#ececec] placeholder:text-slate-500 focus:outline-none focus:ring-0 text-sm resize-none h-10 scrollbar-none"
+                  placeholder={
+                    isRecording
+                      ? "Listening…"
+                      : isGenerating
+                      ? "Generation in progress..."
+                      : "Message SupportAI..."
+                  }
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  rows={1}
+                />
+                {/* Interim transcript preview rendered below the committed text */}
+                {isRecording && interimTranscript && (
+                  <span className="absolute left-2 bottom-2 text-sm text-slate-400 italic pointer-events-none truncate max-w-[90%]">
+                    {input ? " " : ""}{interimTranscript}
+                  </span>
+                )}
+              </div>
 
-              {/* Mic Icon */}
-              <button 
-                type="button"
-                className="w-9 h-9 rounded-full hover:bg-white/5 text-slate-400 hover:text-slate-200 flex items-center justify-center shrink-0 mb-0.5 mr-1 cursor-pointer"
-                title="Voice input"
-              >
-                <Mic className="w-4.5 h-4.5" />
-              </button>
+              {/* Mic Button — animated when recording */}
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={handleMicClick}
+                  disabled={isGenerating}
+                  className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 mb-0.5 mr-1 transition-all cursor-pointer
+                    ${
+                      isRecording
+                        ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 ring-2 ring-red-500/40"
+                        : "hover:bg-white/5 text-slate-400 hover:text-slate-200"
+                    }
+                    ${isGenerating ? "opacity-30 cursor-not-allowed" : ""}
+                  `}
+                  title={isRecording ? "Stop recording" : "Voice input"}
+                >
+                  {isRecording ? (
+                    <span className="relative flex items-center justify-center">
+                      {/* Outer pulse ring */}
+                      <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-40 animate-ping" />
+                      <MicOff className="w-4 h-4 relative z-10" />
+                    </span>
+                  ) : (
+                    <Mic className="w-4.5 h-4.5" />
+                  )}
+                </button>
+
+                {/* Voice error tooltip */}
+                {voiceError && (
+                  <div className="absolute bottom-12 right-0 w-64 bg-[#1a1a1a] border border-red-500/30 rounded-xl p-3 text-xs text-red-400 shadow-xl z-50">
+                    <div className="flex items-start justify-between gap-2">
+                      <span>{voiceError}</span>
+                      <button
+                        onClick={() => setVoiceError(null)}
+                        className="text-slate-500 hover:text-slate-300 shrink-0"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Circular Send / Stop Button */}
               {isGenerating ? (

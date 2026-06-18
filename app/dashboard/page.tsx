@@ -15,7 +15,9 @@ import {
   User,
   Settings,
   LogOut,
-  Zap
+  Zap,
+  TrendingUp,
+  Flame
 } from "lucide-react";
 import { useAuthStore } from "../../stores/authStore";
 import { useChatStore } from "../../stores/chatStore";
@@ -53,6 +55,19 @@ export default function DashboardPage() {
       return res.json();
     },
     enabled: !!token
+  });
+
+  // Fetch personalized trending (user's 4 most recent conversations)
+  const { data: trending = [], isLoading: trendingLoading } = useQuery<Conversation[]>({
+    queryKey: ["trending", user?._id],
+    queryFn: async () => {
+      const res = await apiFetch("/chat/trending");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!token,
+    staleTime: 30_000,           // re-fetch every 30 s
+    refetchOnWindowFocus: true,   // always fresh when user returns to tab
   });
 
   if (!token || !user) {
@@ -134,8 +149,8 @@ export default function DashboardPage() {
         {/* Dashboard Content area */}
         <main className="grow space-y-8">
           <div>
-            <h1 className="text-3xl font-extrabold text-white">System Dashboard</h1>
-            <p className="text-slate-400 text-sm mt-1">Monitor your SupportAI usage and logs.</p>
+            <h1 className="text-3xl font-extrabold text-white">Welcome back, {user.name.split(" ")[0]} 👋</h1>
+            <p className="text-slate-400 text-sm mt-1">Here&#39;s your personalized SupportAI activity hub.</p>
           </div>
 
           {/* Stats overview row */}
@@ -177,6 +192,80 @@ export default function DashboardPage() {
                 <span>Active support updates</span>
               </div>
             </div>
+          </div>
+
+          {/* ── Personalized Trending for You ──────────────────────────── */}
+          <div className="glass-panel p-6 rounded-xl border border-slate-800 bg-slate-950/20">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <Flame className="w-5 h-5 text-orange-400" />
+                <h2 className="text-lg font-bold text-white">Trending for You</h2>
+                <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                  Live
+                </span>
+              </div>
+              <span className="text-xs text-slate-500">Your 4 most recent topics</span>
+            </div>
+
+            {trendingLoading ? (
+              <div className="grid grid-cols-2 gap-4">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="h-20 rounded-xl bg-slate-800/40 animate-pulse" />
+                ))}
+              </div>
+            ) : trending.length === 0 ? (
+              <div className="py-8 text-center">
+                <TrendingUp className="w-8 h-8 text-slate-700 mx-auto mb-2" />
+                <p className="text-slate-500 text-sm">Start chatting to see your trending topics here.</p>
+                <Link href="/chat" className="inline-flex items-center gap-1.5 mt-3 text-xs text-indigo-400 hover:text-indigo-300">
+                  <Zap className="w-3.5 h-3.5" /> Open Chat
+                </Link>
+              </div>
+            ) : (
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {trending.map((conv, idx) => {
+                  const rankColors = [
+                    "from-orange-500 to-amber-500",
+                    "from-indigo-500 to-violet-500",
+                    "from-emerald-500 to-teal-500",
+                    "from-pink-500 to-rose-500",
+                  ];
+                  return (
+                    <li
+                      key={conv._id}
+                      className="group relative flex flex-col gap-2 rounded-xl border border-slate-800 bg-slate-900/50 p-4 hover:border-slate-600 hover:bg-slate-800/60 transition-all cursor-pointer"
+                    >
+                      {/* Rank badge */}
+                      <span
+                        className={`absolute top-3 right-3 w-6 h-6 rounded-full bg-gradient-to-br ${rankColors[idx]} flex items-center justify-center text-[10px] font-extrabold text-white shadow`}
+                      >
+                        {idx + 1}
+                      </span>
+
+                      <div className="flex items-start gap-2.5 pr-8">
+                        <TrendingUp className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+                        <p className="text-sm font-semibold text-slate-100 leading-snug line-clamp-2">
+                          {conv.title || "Untitled Conversation"}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-between mt-auto pt-1">
+                        <span className="text-[10px] text-slate-500">
+                          {new Date(conv.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        <Link
+                          href="/chat"
+                          onClick={() => useChatStore.getState().setCurrentConversationId(conv._id)}
+                          className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300 border border-indigo-500/20 bg-indigo-950/20 hover:bg-indigo-900/30 px-2 py-0.5 rounded transition-colors"
+                        >
+                          Resume →
+                        </Link>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
 
           {/* Conversations History List */}
