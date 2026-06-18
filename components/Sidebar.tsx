@@ -25,7 +25,7 @@ export default function Sidebar() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, guestPromptsUsed, logout, guestSessionId } = useAuthStore();
-  const { currentConversationId, setCurrentConversationId, clearChat, setSidebarOpen } = useChatStore();
+  const { currentConversationId, setCurrentConversationId, clearChat, setSidebarOpen, resetForUser } = useChatStore();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -290,7 +290,7 @@ export default function Sidebar() {
                 <span className="text-[9px]">Profile</span>
               </Link>
               <button
-                onClick={() => { logout(); router.push("/"); }}
+                onClick={() => { resetForUser(); logout(); router.push("/"); }}
                 className="p-1.5 rounded hover:bg-[#212121] text-slate-400 hover:text-red-400 flex flex-col items-center gap-0.5 cursor-pointer"
                 title="Logout"
               >

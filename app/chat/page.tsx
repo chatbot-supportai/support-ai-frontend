@@ -52,7 +52,8 @@ export default function ChatPage() {
     stopGeneration,
     clearChat,
     sidebarOpen,
-    setSidebarOpen
+    setSidebarOpen,
+    appendAssistantMessage
   } = useChatStore();
 
   const [input, setInput] = useState("");
@@ -207,10 +208,14 @@ export default function ChatPage() {
         }
       }
 
-      // Add final assistant message in history list
-      if (tempAssistantContent) {
-        // Refresh conversations list or message list to sync accurate database records
+      // Immediately append the completed AI response to local state so the
+      // message is visible without waiting for the DB round-trip.
+      if (tempAssistantContent && activeConvId) {
+        appendAssistantMessage(tempAssistantContent, activeConvId);
+        // Then sync from the database in the background to replace the temp
+        // local ID with the real MongoDB _id (needed for copy / regenerate).
         queryClient.invalidateQueries({ queryKey: ["messages", activeConvId] });
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
       }
 
     } catch (error) {
